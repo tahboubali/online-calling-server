@@ -1,0 +1,7 @@
+{
+  "request_type": "call-data",
+  "call_data": {
+    "curr_frame": [1, 32, 2, 1, 5, 6, 2, 1, 2, 3, 2, 1, 23, 3],
+    "image_format": ".jpeg"
+  }
+}

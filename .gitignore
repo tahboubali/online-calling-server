@@ -1,0 +1,5 @@
+.env
+.idea
+.air.toml
+.DS_Store
+.vscode
