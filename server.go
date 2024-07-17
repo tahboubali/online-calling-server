@@ -189,11 +189,7 @@ func (s *Server) handleMsg(msg Message) {
 	case GetUsers:
 		{
 			conn := s.Conns[msg.From]
-			keys := make([]string, 0)
-			for key, _ := range s.Users {
-				keys = append(keys, key)
-			}
-			err := conn.WriteJSON(keys)
+			err := conn.WriteJSON(s.Users)
 			if err != nil {
 				s.DebugPrintf("error writing get users to user '%s': %s\n", username, err)
 			}
