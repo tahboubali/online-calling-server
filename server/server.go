@@ -98,7 +98,7 @@ func NewConn(conn *websocket.Conn) *Conn {
 func (c *Conn) sendErr(errType string, errMsg string) {
 	_ = c.WriteJSON(map[string]any{
 		"response_type": errType,
-		"error":         errMsg,
+		"message":       errMsg,
 	})
 }
 
