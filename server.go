@@ -16,6 +16,7 @@ const (
 	UpdateUser = "update-user"
 	CallUpdate = "call-update"
 	GetUsers   = "get-users"
+	Success    = "success"
 )
 
 type Server struct {
@@ -210,7 +211,7 @@ func (s *Server) broadcastCreateUser(userInfo UserInfo) {
 	s.broadcastJSON(map[string]any{
 		"request_type": CreateUser,
 		"user":         userInfo,
-	})
+	}, userInfo.Username)
 }
 
 func (s *Server) broadcastUpdateUser(username string, userInfo UserInfo) {
@@ -218,14 +219,14 @@ func (s *Server) broadcastUpdateUser(username string, userInfo UserInfo) {
 		"request_type": UpdateUser,
 		"username":     username,
 		"userInfo":     userInfo,
-	})
+	}, username)
 }
 
 func (s *Server) broadcastDeleteUser(username string) {
 	s.broadcastJSON(map[string]any{
 		"request_type": DeleteUser,
 		"username":     username,
-	})
+	}, username)
 }
 
 func (s *Server) broadcastCallUpdate(username string, data CallData) {
@@ -233,11 +234,14 @@ func (s *Server) broadcastCallUpdate(username string, data CallData) {
 		"request_type": CallUpdate,
 		"username":     username,
 		"data":         data,
-	})
+	}, username)
 }
 
-func (s *Server) broadcastJSON(data any) {
+func (s *Server) broadcastJSON(data any, username string) {
 	for _, conn := range s.Conns {
+		if conn.CurrUser.Username == username {
+			continue
+		}
 		err := conn.WriteJSON(data)
 		if err != nil {
 			s.DebugPrintf("error writing data: %s\n", err)
