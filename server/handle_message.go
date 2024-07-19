@@ -11,7 +11,7 @@ func (s *Server) handleCreateUser(data Data, from string) {
 	s.Users[username] = user
 	user.CurrConn = conn
 	if err := s.broadcastCreateUser(user.UserInfo); err != nil {
-		conn.sendErr(InternalError, "Failed to broadcast create user message to other users.")
+		conn.sendErr(Error, "Failed to broadcast create user message to other users.")
 		return
 	}
 	s.DebugPrintf("created new user: '%s'\n", username)
@@ -23,7 +23,7 @@ func (s *Server) handleDeleteUser(data Data) {
 	user := s.Users[username]
 	conn := user.CurrConn
 	if err := s.broadcastDeleteUser(username); err != nil {
-		conn.sendErr(InternalError, "Failed to broadcast delete user message to other users.")
+		conn.sendErr(Error, "Failed to broadcast delete user message to other users.")
 		return
 	}
 	delete(s.Users, username)
@@ -39,7 +39,7 @@ func (s *Server) handleUpdateUser(data Data) {
 	conn := user.CurrConn
 	user.UserInfo = userInfo
 	if err := s.broadcastUpdateUser(username, userInfo); err != nil {
-		conn.sendErr(InternalError, "Failed to broadcast ")
+		conn.sendErr(Error, "Failed to broadcast ")
 	}
 	s.DebugPrintf("updated user: from '%s' to '%s'", username, userInfo.Username)
 	conn.sendSuccess(fmt.Sprintf("User was successfully updated from '%s' to '%s'.",

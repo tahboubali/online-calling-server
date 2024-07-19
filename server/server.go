@@ -12,13 +12,15 @@ import (
 )
 
 const (
-	CreateUser    = "create-user"
-	DeleteUser    = "delete-user"
-	UpdateUser    = "update-user"
-	CallUpdate    = "call-update"
-	GetUsers      = "get-users"
-	Success       = "success"
-	InternalError = "internal-error"
+	CreateUser        = "create-user"
+	DeleteUser        = "delete-user"
+	UpdateUser        = "update-user"
+	CallUpdate        = "call-update"
+	GetUsers          = "get-users"
+	Success           = "success"
+	Error             = "error"
+	SuccessCode       = 200
+	InternalErrorCode = 500
 )
 
 type Server struct {
@@ -95,16 +97,18 @@ func NewConn(conn *websocket.Conn) *Conn {
 	}
 }
 
-func (c *Conn) sendErr(errType string, errMsg string) {
+func (c *Conn) sendErr(errCode int, msg string) {
 	_ = c.WriteJSON(map[string]any{
-		"response_type": errType,
-		"message":       errMsg,
+		"response_type": Error,
+		"code":          errCode,
+		"message":       msg,
 	})
 }
 
 func (c *Conn) sendSuccess(msg string) {
 	_ = c.WriteJSON(map[string]any{
 		"response_type": Success,
+		"code":          SuccessCode,
 		"message":       msg,
 	})
 }
