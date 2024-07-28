@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
-	"io"
 	"log"
+	"net"
 	"net/http"
 	"online-calling/debug"
 	"os"
@@ -23,7 +23,7 @@ const (
 	Error             = "error"
 	SuccessCode       = 200
 	InternalErrorCode = 500
-	NotFoundErr       = 400
+	BadRequestError   = 400
 )
 
 type Server struct {
@@ -153,21 +153,35 @@ func (s *Server) handleWsConn(w http.ResponseWriter, r *http.Request) {
 	s.wg.Wait()
 }
 
+func (s *Server) Close(conn *Conn) {
+	err := conn.Close()
+	if err != nil {
+		log.Println("connection closing error:", err)
+	} else {
+		closeMsg := fmt.Sprintf("closed connection (%s)", conn.RemoteAddr().String())
+		if conn.CurrUser != nil {
+			closeMsg += fmt.Sprintf(", (%s)", conn.CurrUser.Username)
+		}
+		log.Println(closeMsg)
+		delete(s.Conns, conn.RemoteAddr().String())
+		if conn.CurrUser != nil {
+			delete(s.Users, conn.CurrUser.Username)
+			conn.CurrUser = nil
+		}
+	}
+}
+
 func (s *Server) readLoop(conn *Conn) {
 	defer s.wg.Done()
+	defer s.Close(conn)
 	for {
 		var data Data
 		err := conn.ReadJSON(&data)
-		if err == io.EOF {
-			conn.Close()
-			delete(s.Conns, conn.RemoteAddr().String())
-			if conn.CurrUser != nil {
-				delete(s.Users, conn.CurrUser.Username)
-				conn.CurrUser = nil
-			}
-		}
 		if err != nil {
 			s.DebugPrintln("read error:", err)
+			if _, ok := err.(*net.OpError); ok || websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				return
+			}
 		}
 		msg := NewMessage(conn.RemoteAddr().String(), data)
 		s.handleMsg(msg)
@@ -193,7 +207,7 @@ func (s *Server) handleMsg(msg Message) {
 		s.handleGetUsers(msg.From)
 	default:
 		s.Conns[msg.From].sendErr(
-			NotFoundErr,
+			BadRequestError,
 			fmt.Sprintf("received invalid request_type: (%s)", msg.Data.RequestType),
 		)
 		s.DebugPrintf("received invalid request_type: (%s)", msg.Data.RequestType)
