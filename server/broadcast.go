@@ -29,9 +29,9 @@ func (s *Server) broadcastDeleteUser(username string) error {
 
 func (s *Server) broadcastCallUpdate(username string, data CallData) {
 	err := s.broadcastJSON(map[string]any{
-		"response_type": CallUpdate,
-		"username":      username,
-		"data":          data,
+		"request_type": CallUpdate,
+		"username":     username,
+		"call_data":    data,
 	}, username)
 	if err != nil {
 		s.DebugPrintln("failed to broadcast call update")
