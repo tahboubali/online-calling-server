@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 )
@@ -29,9 +30,9 @@ func (s *Server) broadcastDeleteUser(username string) error {
 
 func (s *Server) broadcastCallUpdate(username string, data CallData) {
 	err := s.broadcastJSON(map[string]any{
-		"request_type": CallUpdate,
-		"username":     username,
-		"call_data":    data,
+		"response_type": CallUpdate,
+		"username":      username,
+		"call_data":     data,
 	}, username)
 	if err != nil {
 		s.DebugPrintln("failed to broadcast call update")
@@ -41,14 +42,18 @@ func (s *Server) broadcastCallUpdate(username string, data CallData) {
 // broadcastJSON this function takes in an optional varargs list of users that the broadcast shouldn't receive
 func (s *Server) broadcastJSON(data any, usernames ...string) error {
 	for _, conn := range s.Conns {
-		if slices.Contains(usernames, conn.CurrUser.Username) {
+		if conn.CurrUser != nil && slices.Contains(usernames, conn.CurrUser.Username) {
 			continue
 		}
 		err := conn.WriteJSON(data)
 		if err != nil {
-			errf := fmt.Errorf("could not write JSON data to user %s: %s", conn.CurrUser.Username, err)
-			s.DebugPrintln(errf)
-			return errf
+			msg := fmt.Sprintf("could not write JSON data to addr (%s): %s", conn.RemoteAddr().String(), err)
+			if conn.CurrUser != nil {
+				msg += fmt.Sprintf(", user: '%s'", conn.CurrUser.Username)
+			}
+			writeErr := errors.New(msg)
+			s.DebugPrintln(writeErr)
+			return writeErr
 		}
 	}
 	return nil

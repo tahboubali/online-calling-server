@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
@@ -14,16 +15,16 @@ import (
 )
 
 const (
-	CreateUser        = "create-user"
-	DeleteUser        = "delete-user"
-	UpdateUser        = "update-user"
-	CallUpdate        = "call-update"
-	GetUsers          = "get-users"
-	Success           = "success"
-	Error             = "error"
-	SuccessCode       = 200
-	InternalErrorCode = 500
-	BadRequestError   = 400
+	CreateUser      = "create-user"
+	DeleteUser      = "delete-user"
+	UpdateUser      = "update-user"
+	CallUpdate      = "call-update"
+	GetUsers        = "get-users"
+	Success         = "success"
+	Error           = "error"
+	SuccessCode     = 200
+	InternalError   = 500
+	BadRequestError = 400
 )
 
 type Server struct {
@@ -58,7 +59,7 @@ type Data struct {
 }
 
 type CallData struct {
-	CurrFrame   []byte `json:"curr_frame"`
+	CurrFrame   string `json:"curr_frame"`
 	ImageFormat string `json:"image_format"`
 }
 
@@ -163,11 +164,13 @@ func (s *Server) Close(conn *Conn) {
 			closeMsg += fmt.Sprintf(", (%s)", conn.CurrUser.Username)
 		}
 		log.Println(closeMsg)
+		s.mu.Lock()
 		delete(s.Conns, conn.RemoteAddr().String())
 		if conn.CurrUser != nil {
 			delete(s.Users, conn.CurrUser.Username)
 			conn.CurrUser = nil
 		}
+		s.mu.Unlock()
 	}
 }
 
@@ -179,7 +182,8 @@ func (s *Server) readLoop(conn *Conn) {
 		err := conn.ReadJSON(&data)
 		if err != nil {
 			s.DebugPrintln("read error:", err)
-			if _, ok := err.(*net.OpError); ok || websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+			var opError *net.OpError
+			if errors.As(err, &opError) || websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				return
 			}
 		}
@@ -208,8 +212,8 @@ func (s *Server) handleMsg(msg Message) {
 	default:
 		s.Conns[msg.From].sendErr(
 			BadRequestError,
-			fmt.Sprintf("received invalid request_type: (%s)", msg.Data.RequestType),
+			fmt.Sprintf("received invalid `request_type`: (%s)", msg.Data.RequestType),
 		)
-		s.DebugPrintf("received invalid request_type: (%s)", msg.Data.RequestType)
+		s.DebugPrintf("received invalid `request_type`: (%s)", msg.Data.RequestType)
 	}
 }

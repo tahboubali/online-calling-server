@@ -1,7 +1,1 @@
-{
-  "request_type": "update-user",
-  "username": "tahboubali yo!",
-  "user_info": {
-    "username": "tahboubali bro!"
-  }
-}
+{"request_type": "update-user", "username": "tahboubali yo!", "user_info": {"username": "tahboubali bro!"}}
