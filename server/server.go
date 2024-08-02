@@ -27,14 +27,35 @@ const (
 	BadRequestError = 400
 )
 
+var currRoomID = 0
+
 type Server struct {
 	*debug.Debugger
 	websocket.Upgrader
 	Port  string
-	Conns map[string]*Conn
-	Users map[string]*User
 	wg    sync.WaitGroup
 	mu    sync.Mutex
+	Rooms map[int]*Room
+	Conns map[string]*Conn
+	Users map[string]*User
+}
+
+type Room struct {
+	Id    int
+	Name  string
+	Users map[string]*User
+	Owner *User
+	mu    sync.Mutex
+}
+
+func NewRoom(owner *User, id int) *Room {
+	users := make(map[string]*User)
+	users[owner.Username] = owner
+	return &Room{
+		Id:    id,
+		Owner: owner,
+		Users: users,
+	}
 }
 
 func NewServer() *Server {
@@ -46,8 +67,9 @@ func NewServer() *Server {
 				return true
 			},
 		},
-		Conns: make(map[string]*Conn),
+		Rooms: make(map[int]*Room),
 		Users: make(map[string]*User),
+		Conns: make(map[string]*Conn),
 	}
 }
 
@@ -81,6 +103,7 @@ type UserInfo struct {
 
 type User struct {
 	UserInfo
+	RoomId   int   `json:"room_id"`
 	CurrConn *Conn `json:"-"`
 }
 
@@ -136,6 +159,16 @@ func (s *Server) Run() {
 	http.HandleFunc("/ws", s.handleWsConn)
 	log.Println("server started on localhost" + s.Port)
 	log.Fatal(http.ListenAndServe("localhost"+s.Port, nil))
+}
+
+func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
+
+	s.Rooms[currRoomID] = NewRoom()
+	currRoomID++
 }
 
 func (s *Server) handleWsConn(w http.ResponseWriter, r *http.Request) {
