@@ -1,9 +1,9 @@
 package server
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
 	"log"
@@ -12,22 +12,8 @@ import (
 	"online-calling/debug"
 	"os"
 	"sync"
+	"time"
 )
-
-const (
-	CreateUser      = "create-user"
-	DeleteUser      = "delete-user"
-	UpdateUser      = "update-user"
-	CallUpdate      = "call-update"
-	GetUsers        = "get-users"
-	Success         = "success"
-	Error           = "error"
-	SuccessCode     = 200
-	InternalError   = 500
-	BadRequestError = 400
-)
-
-var currRoomID = 0
 
 type Server struct {
 	*debug.Debugger
@@ -37,25 +23,10 @@ type Server struct {
 	mu    sync.Mutex
 	Rooms map[int]*Room
 	Conns map[string]*Conn
-	Users map[string]*User
-}
-
-type Room struct {
-	Id    int
-	Name  string
-	Users map[string]*User
-	Owner *User
-	mu    sync.Mutex
-}
-
-func NewRoom(owner *User, id int) *Room {
-	users := make(map[string]*User)
-	users[owner.Username] = owner
-	return &Room{
-		Id:    id,
-		Owner: owner,
-		Users: users,
-	}
+	// Users is indexed by username
+	Users       map[string]*User
+	usersByAuth map[string]*User
+	currRoomId  int
 }
 
 func NewServer() *Server {
@@ -67,33 +38,52 @@ func NewServer() *Server {
 				return true
 			},
 		},
-		Rooms: make(map[int]*Room),
-		Users: make(map[string]*User),
-		Conns: make(map[string]*Conn),
+		Rooms:       make(map[int]*Room),
+		Users:       make(map[string]*User),
+		Conns:       make(map[string]*Conn),
+		usersByAuth: make(map[string]*User),
+	}
+}
+
+type Room struct {
+	Id    int
+	Name  string
+	Users map[string]*User
+	Owner *User
+	mu    sync.Mutex
+}
+
+func NewRoom(id int, owner *User, RoomName string) *Room {
+	users := make(map[string]*User)
+	users[owner.Username] = owner
+	return &Room{
+		Name:  RoomName,
+		Id:    id,
+		Owner: owner,
+		Users: users,
 	}
 }
 
 type Data struct {
-	RequestType string   `json:"request_type"`
-	UserInfo    UserInfo `json:"user_info"`
-	CallData    CallData `json:"call_data"`
-	Username    string   `json:"username"`
+	UserInfo UserInfo `json:"user_info"`
+	CallData CallData `json:"call_data"`
+	Username string   `json:"username"`
 }
 
 type CallData struct {
-	CurrFrame   string `json:"curr_frame"`
-	ImageFormat string `json:"image_format"`
+	CurrFrame string `json:"curr_frame"`
+	ImgFmt    string `json:"image_format"`
 }
 
-type Message struct {
-	From string
-	Data Data
+type CallUpdate struct {
+	UserInfo UserInfo
+	CallData CallData
 }
 
-func NewMessage(from string, data Data) Message {
-	return Message{
-		From: from,
-		Data: data,
+func NewCallUpdate(userInfo UserInfo, callData CallData) CallUpdate {
+	return CallUpdate{
+		UserInfo: userInfo,
+		CallData: callData,
 	}
 }
 
@@ -102,9 +92,11 @@ type UserInfo struct {
 }
 
 type User struct {
-	UserInfo
-	RoomId   int   `json:"room_id"`
-	CurrConn *Conn `json:"-"`
+	UserInfo `json:"user_info"`
+	*HashedPassword
+	AuthToken *AuthToken `json:"auth"`
+	RoomId    int        `json:"room_id"`
+	CurrConn  *Conn      `json:"-"`
 }
 
 func NewUser(userInfo UserInfo) *User {
@@ -124,23 +116,7 @@ func NewConn(conn *websocket.Conn) *Conn {
 	}
 }
 
-func (c *Conn) sendErr(errCode int, msg string) {
-	_ = c.WriteJSON(map[string]any{
-		"response_type": Error,
-		"code":          errCode,
-		"message":       msg,
-	})
-}
-
-func (c *Conn) sendSuccess(msg string) {
-	_ = c.WriteJSON(map[string]any{
-		"response_type": Success,
-		"code":          SuccessCode,
-		"message":       msg,
-	})
-}
-
-func (s *Server) Init() {
+func (s *Server) init() {
 	if err := godotenv.Load(); err != nil {
 		log.Fatalf("error loading .env file: %v", err)
 	}
@@ -151,43 +127,27 @@ func (s *Server) Init() {
 		log.Println("DEBUG mode is disabled (logs will not be printed)")
 	}
 	s.Debugger = debug.NewDebugger(debugEnv)
-	s.Port = os.Getenv("PORT")
+	s.Port = ":" + os.Getenv("PORT")
 }
 
 func (s *Server) Run() {
-	s.Init()
-	http.HandleFunc("/ws", s.handleWsConn)
-	log.Println("server started on localhost" + s.Port)
-	log.Fatal(http.ListenAndServe("localhost"+s.Port, nil))
+	s.init()
+	r := mux.NewRouter()
+	r.HandleFunc("/join-room", s.handleJoinRoom).Methods(http.MethodPost)
+	r.HandleFunc("/create-room", s.handleCreateRoom).Methods(http.MethodPost)
+	r.HandleFunc("/delete-room", s.handleDeleteRoom).Methods(http.MethodDelete)
+	r.HandleFunc("/get-rooms", s.handleGetRooms).Methods(http.MethodGet)
+	r.HandleFunc("/"+RequestDeleteUser, s.handleDeleteUser).Methods(http.MethodDelete)
+	r.HandleFunc("/"+RequestSignup, s.handleSignup).Methods(http.MethodPost)
+	r.HandleFunc("/"+RequestUpdateUser, s.handleUpdateUser).Methods(http.MethodPut, http.MethodPost)
+	r.HandleFunc("/get-users", s.handleGetUsers).Methods(http.MethodGet)
+	r.Use(s.LoggingMiddleware)
+	r.Use(s.AuthMiddleware)
+	log.Println("server started on", s.Port)
+	log.Fatal(http.ListenAndServe(s.Port, r))
 }
 
-func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
-
-}
-
-func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
-
-	s.Rooms[currRoomID] = NewRoom()
-	currRoomID++
-}
-
-func (s *Server) handleWsConn(w http.ResponseWriter, r *http.Request) {
-	tmp, err := s.Upgrade(w, r, nil)
-	conn := NewConn(tmp)
-	if err != nil {
-		s.DebugPrintln(err)
-		err = nil
-	}
-	s.mu.Lock()
-	s.Conns[conn.RemoteAddr().String()] = conn
-	s.mu.Unlock()
-	s.DebugPrintf("new connection established (%s)\n", conn.RemoteAddr().String())
-	s.wg.Add(1)
-	go s.readLoop(conn)
-	s.wg.Wait()
-}
-
-func (s *Server) Close(conn *Conn) {
+func (s *Server) closeConn(conn *Conn) {
 	err := conn.Close()
 	if err != nil {
 		log.Println("connection closing error:", err)
@@ -207,12 +167,13 @@ func (s *Server) Close(conn *Conn) {
 	}
 }
 
-func (s *Server) readLoop(conn *Conn) {
+func (s *Server) joinRoom(user *User, roomId int) {
+	conn := user.CurrConn
 	defer s.wg.Done()
-	defer s.Close(conn)
+	defer s.closeConn(conn)
 	for {
-		var data Data
-		err := conn.ReadJSON(&data)
+		var callData CallData
+		err := conn.ReadJSON(&callData)
 		if err != nil {
 			s.DebugPrintln("read error:", err)
 			var opError *net.OpError
@@ -220,33 +181,24 @@ func (s *Server) readLoop(conn *Conn) {
 				return
 			}
 		}
-		msg := NewMessage(conn.RemoteAddr().String(), data)
-		s.handleMsg(msg)
+		s.broadcastCallUpdate(roomId, NewCallUpdate(user.UserInfo, callData))
 	}
 }
 
-func (s *Server) handleMsg(msg Message) {
-	marshal, _ := json.Marshal(msg.Data)
-	s.DebugPrintf("new message received from (%s): %s\n", msg.From, string(marshal))
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (c *Conn) ready() bool {
+	return c.readyToWrite() && c.readyToRead()
+}
 
-	switch msg.Data.RequestType {
-	case CreateUser:
-		s.handleCreateUser(msg.Data, msg.From)
-	case DeleteUser:
-		s.handleDeleteUser(msg.Data)
-	case UpdateUser:
-		s.handleUpdateUser(msg.Data)
-	case CallUpdate:
-		s.handleCallUpdate(msg.Data.CallData, msg.From)
-	case GetUsers:
-		s.handleGetUsers(msg.From)
-	default:
-		s.Conns[msg.From].sendErr(
-			BadRequestError,
-			fmt.Sprintf("received invalid `request_type`: (%s)", msg.Data.RequestType),
-		)
-		s.DebugPrintf("received invalid `request_type`: (%s)", msg.Data.RequestType)
-	}
+func (c *Conn) readyToRead() bool {
+	c.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+	_, _, err := c.NextReader()
+	c.SetReadDeadline(time.Time{})
+	return err == nil
+}
+
+func (c *Conn) readyToWrite() bool {
+	c.SetWriteDeadline(time.Now().Add(1 * time.Millisecond))
+	_, _, err := c.NextReader()
+	c.SetReadDeadline(time.Time{})
+	return err == nil
 }

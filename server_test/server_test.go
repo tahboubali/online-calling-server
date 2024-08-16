@@ -13,7 +13,7 @@ func TestCreateUser(t *testing.T) {
 		WriteBufferSize: 1024,
 	}
 	conn, _, _ := dialer.Dial("ws://localhost:8080/ws", nil)
-	//defer conn.Close()
+	//defer conn.closeConn()
 	file, err := os.Open("/Users/alitahboub/GolandProjects/online-calling/json_testing_examples/new-user.json")
 	defer file.Close()
 	if err != nil {

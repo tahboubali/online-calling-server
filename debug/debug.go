@@ -1,13 +1,17 @@
 package debug
 
-import "log"
+import (
+	"log"
+)
 
 type Debugger struct {
 	debug bool
 }
 
 func NewDebugger(debug bool) *Debugger {
-	return &Debugger{debug: debug}
+	return &Debugger{
+		debug: debug,
+	}
 }
 
 func (d *Debugger) DebugPrintf(format string, args ...interface{}) {
