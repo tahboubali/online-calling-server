@@ -12,7 +12,9 @@ const (
 	RequestUpdateUser = "update-user"
 	RequestDeleteUser = "delete-user"
 	RequestCallUpdate = "call-update"
+	RequestCreateRoom = "create-room"
 	RequestJoinRoom   = "join-room"
+	RequestDeleteRoom
 )
 
 type Broadcast struct {
@@ -28,7 +30,7 @@ func NewBroadcast(requestType string, data any) Broadcast {
 }
 
 func (s *Server) broadcastJoinRoom(userInfo UserInfo, roomId int) error {
-	return s.broadcastRoomUpdate(userInfo.Username, NewBroadcast(RequestJoinRoom, userInfo), roomId)
+	return s.broadcastRoomUpdate(userInfo, NewBroadcast(RequestJoinRoom, userInfo), roomId)
 }
 
 func (s *Server) broadcastCreateUser(userInfo UserInfo) error {
@@ -40,10 +42,11 @@ func (s *Server) broadcastUpdateUser(username string, userInfo UserInfo) error {
 }
 
 func (s *Server) broadcastDeleteUser(username string) error {
+	return s.broadcastServerUpdate(NewBroadcast(RequestDeleteUser, map[string]any{"username": username}), notUser(username))
 }
 
 func (s *Server) broadcastCallUpdate(roomId int, callUpdate CallUpdate) {
-	err := s.broadcastRoomUpdate(callUpdate.Username, NewBroadcast(RequestCallUpdate, callUpdate.CallData), roomId)
+	err := s.broadcastRoomUpdate(callUpdate.UserInfo, NewBroadcast(RequestCallUpdate, callUpdate.CallData), roomId)
 	if err != nil {
 		s.DebugPrintln("failed to broadcast call update")
 	}
@@ -67,7 +70,7 @@ func (s *Server) broadcastServerUpdate(broadcast Broadcast, shouldSend func(user
 	return nil
 }
 
-func (s *Server) broadcastRoomUpdate(username string, broadcast Broadcast, roomId int) error {
+func (s *Server) broadcastRoomUpdate(userInfo UserInfo, broadcast Broadcast, roomId int) error {
 	return s.broadcastServerUpdate(broadcast, func(user *User) bool {
 		s.mu.Lock()
 		room := s.Rooms[roomId]
@@ -75,7 +78,7 @@ func (s *Server) broadcastRoomUpdate(username string, broadcast Broadcast, roomI
 		room.mu.Lock()
 		_, inRoom := room.Users[user.Username]
 		room.mu.Unlock()
-		return inRoom && notUser(username)(user)
+		return inRoom && notUser(userInfo.Username)(user)
 	})
 }
 

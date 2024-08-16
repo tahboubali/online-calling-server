@@ -97,8 +97,8 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 	user.CurrConn = nil
 	w.WriteHeader(http.StatusOK)
-	s.broadcastDeleteUser(user.Username)
-	log.Printf("delete user '%s', user info: %")
+	s.broadcastServerUpdate(NewBroadcast(RequestDeleteUser, map[string]any{"username": user.Username}), notUser(user.Username))
+	log.Printf("delete user '%s', user info: %v\n", user.Username, user.UserInfo)
 }
 
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -110,6 +110,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	user.UserInfo = body.UserInfo
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintln(w, "Successfully updated user information.")
+	s.broadcastUpdateUser(user.Username, body.UserInfo)
 	log.Printf("user '%s' was successfully updated from %v to %v", user.Username, oldInfo, body.UserInfo)
 }
 
@@ -132,22 +133,23 @@ func (s *Server) handleGetUsers(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Username string `json:"username"`
 		RoomName string `json:"room_name"`
 	}
 	json.NewDecoder(r.Body).Decode(&body)
+	user := r.Context().Value("user").(*User)
+	room := NewRoom(s.currRoomId, user, body.RoomName)
 	s.mu.Lock()
-	user := s.Users[body.Username]
-	s.Rooms[s.currRoomId] = NewRoom(s.currRoomId, s.Users[body.Username], body.RoomName)
+	s.Rooms[s.currRoomId] = room
 	user.RoomId = s.currRoomId
 	s.mu.Unlock()
 	message, _ := json.Marshal(map[string]any{
-		"message": fmt.Sprintf("Successfully created room '%s' with '%s' as owner.", body.RoomName, body.Username),
-		"owner":   body.Username,
+		"message": fmt.Sprintf("Successfully created room '%s' with '%s' as owner.", body.RoomName, user.Username),
+		"owner":   user.Username,
 		"room_id": s.currRoomId,
 	})
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintln(w, string(message))
+	s.broadcastServerUpdate(NewBroadcast(RequestCreateRoom, room), notUser(user.Username))
 	s.mu.Lock()
 	s.currRoomId++
 	s.mu.Unlock()
@@ -178,7 +180,7 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 		s.Conns[conn.RemoteAddr().String()] = user.CurrConn
 		s.mu.Unlock()
 	}
-	s.joinRoom(user, body.RoomId)
+	go s.joinRoom(user, body.RoomId)
 }
 
 func (s *Server) handleDeleteRoom(w http.ResponseWriter, r *http.Request) {
@@ -201,7 +203,7 @@ func (s *Server) handleDeleteRoom(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 	s.mu.Lock()
-	//TODO add broadcast delete room for this route
+	s.broadcastServerUpdate(NewBroadcast(RequestDeleteRoom, body), notUser(room.Owner.Username))
 	for _, user := range s.Rooms[body.RoomId].Users {
 		user.RoomId = -1
 	}

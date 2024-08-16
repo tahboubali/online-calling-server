@@ -38,9 +38,9 @@ func (s *Server) AuthMiddleware(next http.Handler) http.Handler {
 			fmt.Fprintln(w, "Invalid authentication key.")
 			return
 		}
-		if reason, valid := user.AuthToken.IsValid(); !valid {
+		if err := user.AuthToken.IsValid(); err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
-			fmt.Fprintln(w, reason)
+			fmt.Fprintln(w, err.Error())
 			return
 		}
 		ctx := context.WithValue(r.Context(), "user", user)

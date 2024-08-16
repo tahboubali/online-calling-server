@@ -147,30 +147,11 @@ func (s *Server) Run() {
 	log.Fatal(http.ListenAndServe(s.Port, r))
 }
 
-func (s *Server) closeConn(conn *Conn) {
-	err := conn.Close()
-	if err != nil {
-		log.Println("connection closing error:", err)
-	} else {
-		closeMsg := fmt.Sprintf("closed connection (%s)", conn.RemoteAddr().String())
-		if conn.CurrUser != nil {
-			closeMsg += fmt.Sprintf(", (%s)", conn.CurrUser.Username)
-		}
-		log.Println(closeMsg)
-		s.mu.Lock()
-		delete(s.Conns, conn.RemoteAddr().String())
-		if conn.CurrUser != nil {
-			delete(s.Users, conn.CurrUser.Username)
-			conn.CurrUser = nil
-		}
-		s.mu.Unlock()
-	}
-}
-
 func (s *Server) joinRoom(user *User, roomId int) {
 	conn := user.CurrConn
 	defer s.wg.Done()
 	defer s.closeConn(conn)
+	s.broadcastJoinRoom(user.UserInfo, roomId)
 	for {
 		var callData CallData
 		err := conn.ReadJSON(&callData)
@@ -201,4 +182,24 @@ func (c *Conn) readyToWrite() bool {
 	_, _, err := c.NextReader()
 	c.SetReadDeadline(time.Time{})
 	return err == nil
+}
+
+func (s *Server) closeConn(conn *Conn) {
+	err := conn.Close()
+	if err != nil {
+		log.Println("connection closing error:", err)
+	} else {
+		closeMsg := fmt.Sprintf("closed connection (%s)", conn.RemoteAddr().String())
+		if conn.CurrUser != nil {
+			closeMsg += fmt.Sprintf(", (%s)", conn.CurrUser.Username)
+		}
+		log.Println(closeMsg)
+		s.mu.Lock()
+		delete(s.Conns, conn.RemoteAddr().String())
+		if conn.CurrUser != nil {
+			delete(s.Users, conn.CurrUser.Username)
+			conn.CurrUser = nil
+		}
+		s.mu.Unlock()
+	}
 }
